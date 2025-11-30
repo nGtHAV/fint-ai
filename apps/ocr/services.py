@@ -40,9 +40,8 @@ class PaddleOCR_Provider(OCRProvider):
                 from paddleocr import PaddleOCR
                 # Khmer language OCR
                 self._ocr_km = PaddleOCR(
-                    use_angle_cls=True,
+                    use_textline_orientation=True,
                     lang='km',  # Khmer
-                    show_log=False,
                     use_gpu=False
                 )
             return self._ocr_km
@@ -51,9 +50,8 @@ class PaddleOCR_Provider(OCRProvider):
                 from paddleocr import PaddleOCR
                 # English language OCR (default)
                 self._ocr_en = PaddleOCR(
-                    use_angle_cls=True,
+                    use_textline_orientation=True,
                     lang='en',
-                    show_log=False,
                     use_gpu=False
                 )
             return self._ocr_en
