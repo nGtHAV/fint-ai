@@ -107,6 +107,11 @@ esac
 
 python3 -m venv venv
 source venv/bin/activate
+
+# Set pip temp directory to home to avoid disk space issues
+export TMPDIR=/home/${APP_USER}/pip_tmp
+mkdir -p $TMPDIR
+
 pip install --upgrade pip
 
 # Install dependencies based on selected provider
@@ -116,6 +121,9 @@ if [[ "$OCR_PROVIDER" == "easyocr" ]]; then
 else
     pip install --no-cache-dir -r requirements-surya.txt
 fi
+
+# Cleanup temp directory
+rm -rf $TMPDIR
 
 # Step 6: Configure environment
 echo -e "${YELLOW}[6/8] Configuring environment...${NC}"
