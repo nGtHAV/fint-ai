@@ -80,7 +80,8 @@ REST_FRAMEWORK = {
 }
 
 # AI Provider Settings
-AI_PROVIDER = env('AI_PROVIDER', default='tesseract')  # 'gemini', 'openai', or 'tesseract'
+# Supported: 'surya', 'easyocr', 'tesseract', 'gemini', 'openai'
+AI_PROVIDER = env('AI_PROVIDER', default='surya')  # Default to Surya OCR for local GPU
 OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
 GOOGLE_API_KEY = env('GOOGLE_API_KEY', default='')
 TESSERACT_CMD = env('TESSERACT_CMD', default='/usr/bin/tesseract')

@@ -33,6 +33,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/venv"
 PORT="${PORT:-5001}"
 MODE="dev"
+OCR_PROVIDER="${AI_PROVIDER:-surya}"
 
 # =============================================================================
 # Helper Functions
@@ -127,8 +128,8 @@ setup_env() {
 SECRET_KEY=${SECRET_KEY}
 DEBUG=True
 
-# OCR Configuration - Surya OCR (GPU optimized, ~2-3GB VRAM)
-AI_PROVIDER=surya
+# OCR Configuration - surya (GPU optimized) or easyocr
+AI_PROVIDER=${OCR_PROVIDER}
 
 # Allowed hosts
 ALLOWED_HOSTS=localhost,127.0.0.1
@@ -136,7 +137,14 @@ ALLOWED_HOSTS=localhost,127.0.0.1
 # CORS - Allow frontend to access
 CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
 EOF
-        print_success "Created .env file"
+        print_success "Created .env file with AI_PROVIDER=${OCR_PROVIDER}"
+    else
+        # Update AI_PROVIDER in existing .env if --provider was specified
+        if [[ "$PROVIDER_CHANGED" == "true" ]]; then
+            print_step "Updating AI_PROVIDER to ${OCR_PROVIDER}..."
+            sed -i "s/^AI_PROVIDER=.*/AI_PROVIDER=${OCR_PROVIDER}/" "$SCRIPT_DIR/.env"
+            print_success "Updated AI_PROVIDER=${OCR_PROVIDER}"
+        fi
     fi
 }
 
@@ -152,6 +160,9 @@ start_dev() {
     setup_env
     check_gpu
     
+    # Read current provider from .env
+    CURRENT_PROVIDER=$(grep "^AI_PROVIDER=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2 || echo "surya")
+    
     # Kill any existing process on the port
     print_step "Checking port $PORT..."
     lsof -ti:$PORT | xargs -r kill -9 2>/dev/null || true
@@ -160,15 +171,16 @@ start_dev() {
     print_success "Starting Django development server on port $PORT..."
     echo ""
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}  Fint AI OCR Service (Surya OCR + GPU)${NC}"
+    echo -e "${GREEN}  Fint AI OCR Service${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
+    echo -e "  ${BLUE}Provider:${NC} ${CURRENT_PROVIDER}"
     echo -e "  ${BLUE}Local:${NC}    http://localhost:$PORT"
     echo -e "  ${BLUE}Network:${NC}  http://$(hostname -I | awk '{print $1}'):$PORT"
     echo ""
     echo -e "  ${BLUE}API Endpoints:${NC}"
-    echo -e "    POST /api/ocr/scan    - Scan receipt image"
-    echo -e "    GET  /api/ocr/info    - Provider information"
+    echo -e "    POST /api/ocr/scan     - Scan receipt image"
+    echo -e "    GET  /api/ocr/provider - Provider information"
     echo ""
     echo -e "  ${YELLOW}Press Ctrl+C to stop${NC}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -354,25 +366,33 @@ show_help() {
     echo "Usage: ./start-local.sh [options]"
     echo ""
     echo "Options:"
-    echo "  --dev         Start in development mode with auto-reload (default)"
-    echo "  --prod        Start in production mode with gunicorn"
-    echo "  --bg          Start in background mode"
-    echo "  --port PORT   Specify port (default: 5001)"
-    echo "  --stop        Stop running service"
-    echo "  --status      Show service status"
-    echo "  --test        Test OCR with sample image"
-    echo "  --gpu         Check GPU status"
-    echo "  --help        Show this help message"
+    echo "  --dev              Start in development mode with auto-reload (default)"
+    echo "  --prod             Start in production mode with gunicorn"
+    echo "  --bg               Start in background mode"
+    echo "  --port PORT        Specify port (default: 5001)"
+    echo "  --provider NAME    Set OCR provider: surya, easyocr, tesseract"
+    echo "  --stop             Stop running service"
+    echo "  --status           Show service status"
+    echo "  --test             Test OCR with sample image"
+    echo "  --gpu              Check GPU status"
+    echo "  --help             Show this help message"
+    echo ""
+    echo "OCR Providers:"
+    echo "  surya     - Best accuracy, GPU optimized (~2-3GB VRAM)"
+    echo "  easyocr   - Good accuracy, works on CPU/GPU"
+    echo "  tesseract - Basic accuracy, CPU only (fallback)"
     echo ""
     echo "Examples:"
-    echo "  ./start-local.sh                  # Start dev server on port 5001"
-    echo "  ./start-local.sh --port 8000      # Start on port 8000"
-    echo "  ./start-local.sh --bg             # Start in background"
-    echo "  ./start-local.sh --test           # Test OCR functionality"
-    echo "  ./start-local.sh --stop           # Stop the service"
+    echo "  ./start-local.sh                       # Start with default provider (surya)"
+    echo "  ./start-local.sh --provider easyocr    # Start with EasyOCR"
+    echo "  ./start-local.sh --port 8000           # Start on port 8000"
+    echo "  ./start-local.sh --bg                  # Start in background"
+    echo "  ./start-local.sh --test                # Test OCR functionality"
+    echo "  ./start-local.sh --stop                # Stop the service"
     echo ""
     echo "Environment Variables:"
-    echo "  PORT=5001     Override default port"
+    echo "  PORT=5001          Override default port"
+    echo "  AI_PROVIDER=surya  Override default OCR provider"
     echo ""
 }
 
@@ -398,6 +418,16 @@ main() {
                 ;;
             --port)
                 PORT="$2"
+                shift 2
+                ;;
+            --provider)
+                OCR_PROVIDER="$2"
+                PROVIDER_CHANGED="true"
+                if [[ "$OCR_PROVIDER" != "surya" && "$OCR_PROVIDER" != "easyocr" && "$OCR_PROVIDER" != "tesseract" ]]; then
+                    print_error "Invalid provider: $OCR_PROVIDER"
+                    echo "Valid providers: surya, easyocr, tesseract"
+                    exit 1
+                fi
                 shift 2
                 ;;
             --stop)

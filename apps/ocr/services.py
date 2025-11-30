@@ -641,14 +641,25 @@ def get_ocr_provider() -> OCRProvider:
     """Get the configured OCR provider"""
     provider = getattr(settings, 'AI_PROVIDER', 'surya').lower()
     
+    logger.info(f"[OCR] Selected provider from settings: {provider}")
+    print(f"[OCR] Using OCR provider: {provider}", flush=True)
+    
     if provider == 'gemini':
+        logger.info("[OCR] Initializing Gemini OCR provider")
         return GeminiOCR()
     elif provider == 'openai':
+        logger.info("[OCR] Initializing OpenAI OCR provider")
         return OpenAIOCR()
     elif provider == 'tesseract':
+        logger.info("[OCR] Initializing Tesseract OCR provider")
         return TesseractOCR()
     elif provider == 'easyocr':
+        logger.info("[OCR] Initializing EasyOCR provider")
         return EasyOCR_Provider()
+    elif provider == 'surya':
+        logger.info("[OCR] Initializing Surya OCR provider")
+        return SuryaOCR_Provider()
     else:
-        # Default to Surya OCR (best for 6GB VRAM)
+        # Default to Surya OCR (best for local GPU)
+        logger.warning(f"[OCR] Unknown provider '{provider}', defaulting to Surya OCR")
         return SuryaOCR_Provider()
