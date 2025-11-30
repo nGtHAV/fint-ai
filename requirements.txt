@@ -3,9 +3,13 @@ django>=5.0.0
 djangorestframework>=3.14.0
 django-cors-headers>=4.3.0
 
-# PaddleOCR - Primary OCR Engine
-paddlepaddle>=2.5.0
-paddleocr>=2.7.0
+# Surya OCR - Primary OCR Engine (optimized for 6GB VRAM, ~2-3GB usage)
+surya-ocr>=0.17.0
+
+# EasyOCR - Alternative OCR Engine
+easyocr>=1.7.0
+torch>=2.0.0
+torchvision>=0.15.0
 
 # OCR and Image Processing (Fallback)
 pytesseract>=0.3.10

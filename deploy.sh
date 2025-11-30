@@ -1,11 +1,14 @@
 #!/bin/bash
 
 # ============================================================
-# Fint AI OCR Service - Droplet Deployment Script
+# Fint AI OCR Service - Remote Server Deployment Script
 # ============================================================
-# Run this script on your DigitalOcean droplet to deploy
-# Usage: curl -sSL https://raw.githubusercontent.com/YOUR_USER/fint-ai/main/deploy.sh | bash
-# Or: ./deploy.sh
+# Deploy to a remote server (DigitalOcean, etc.)
+# For LOCAL development with GPU, use: ./start-local.sh
+#
+# Usage: 
+#   curl -sSL https://raw.githubusercontent.com/nGtHAV/fint-ai/main/deploy.sh | bash
+#   Or: ./deploy.sh
 # ============================================================
 
 set -e
@@ -21,13 +24,15 @@ NC='\033[0m'
 APP_NAME="fint-ai"
 APP_USER="fint"
 APP_DIR="/opt/fint/ai"
-REPO_URL="${REPO_URL:-https://github.com/YOUR_USERNAME/fint-ai.git}"
+REPO_URL="${REPO_URL:-https://github.com/nGtHAV/fint-ai.git}"
 DOMAIN="${DOMAIN:-}"
 PORT=5001
 
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}       Fint AI OCR Service - Deployment Script${NC}"
+echo -e "${BLUE}       Fint AI OCR Service - Remote Deployment${NC}"
 echo -e "${BLUE}============================================================${NC}"
+echo ""
+echo -e "${YELLOW}Note: For local development with GPU, use ./start-local.sh${NC}"
 echo ""
 
 # Check if running as root
@@ -90,7 +95,7 @@ if [ ! -f ".env" ]; then
     cat > .env << EOF
 SECRET_KEY=$SECRET_KEY
 DEBUG=False
-AI_PROVIDER=paddle
+AI_PROVIDER=surya
 ALLOWED_HOSTS=localhost,127.0.0.1${DOMAIN:+,$DOMAIN}
 CORS_ALLOWED_ORIGINS=http://localhost:3000${DOMAIN:+,https://$DOMAIN}
 EOF
@@ -103,7 +108,7 @@ fi
 echo -e "${YELLOW}[7/8] Setting up systemd service...${NC}"
 cat > /etc/systemd/system/$APP_NAME.service << EOF
 [Unit]
-Description=Fint AI OCR Service
+Description=Fint AI OCR Service (Surya OCR)
 After=network.target
 
 [Service]
@@ -116,8 +121,8 @@ ExecStart=$APP_DIR/venv/bin/gunicorn --config gunicorn.conf.py fint_ai.wsgi:appl
 Restart=always
 RestartSec=3
 
-# Resource limits
-MemoryMax=2G
+# Surya OCR may need more memory
+MemoryMax=4G
 CPUQuota=100%
 
 [Install]

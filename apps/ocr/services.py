@@ -1,15 +1,19 @@
 """
-OCR Service - Multiple AI provider support with PaddleOCR
+OCR Service - Multiple AI provider support with Surya OCR
 """
 import base64
 import io
 import re
 import json
+import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
 from PIL import Image
 from django.conf import settings
 import numpy as np
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
 class OCRProvider(ABC):
@@ -21,90 +25,80 @@ class OCRProvider(ABC):
         pass
 
 
-class PaddleOCR_Provider(OCRProvider):
-    """PaddleOCR provider (local, free, high accuracy) - English and Khmer support"""
+class SuryaOCR_Provider(OCRProvider):
+    """Surya OCR provider - Modern, efficient, GPU-optimized (~2-3GB VRAM)"""
     
     _instance = None
-    _ocr_en = None
-    _ocr_km = None
+    _foundation = None
+    _detection = None
+    _recognition = None
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def _get_ocr(self, lang='en'):
-        """Lazy load PaddleOCR to avoid slow startup"""
-        if lang == 'km' or lang == 'khmer':
-            if self._ocr_km is None:
-                from paddleocr import PaddleOCR
-                # Khmer language OCR
-                self._ocr_km = PaddleOCR(
-                    use_textline_orientation=True,
-                    lang='km',  # Khmer
-                    use_gpu=False
-                )
-            return self._ocr_km
-        else:
-            if self._ocr_en is None:
-                from paddleocr import PaddleOCR
-                # English language OCR (default)
-                self._ocr_en = PaddleOCR(
-                    use_textline_orientation=True,
-                    lang='en',
-                    use_gpu=False
-                )
-            return self._ocr_en
+    def _init_predictors(self):
+        """Lazy load Surya OCR predictors"""
+        if self._foundation is None:
+            print("[OCR] Initializing Surya OCR (optimized for 6GB VRAM)...", flush=True)
+            from surya.foundation import FoundationPredictor
+            from surya.recognition import RecognitionPredictor
+            from surya.detection import DetectionPredictor
+            
+            # Initialize in correct order
+            self._foundation = FoundationPredictor()
+            self._detection = DetectionPredictor()
+            self._recognition = RecognitionPredictor(self._foundation)
+            print("[OCR] Surya OCR initialized successfully", flush=True)
     
     def extract_receipt_data(self, image_data: bytes, lang: str = None) -> dict:
+        print(f"\n[OCR] Starting receipt extraction with Surya OCR...", flush=True)
         try:
-            # Open image and convert to numpy array
+            # Open image
             image = Image.open(io.BytesIO(image_data))
-            image_np = np.array(image)
             
-            # Determine language from settings or parameter
-            ocr_lang = lang or getattr(settings, 'OCR_LANGUAGE', 'en')
+            # Convert to RGB if necessary
+            if image.mode != 'RGB':
+                image = image.convert('RGB')
             
-            # Get OCR instance for the language
-            ocr = self._get_ocr(ocr_lang)
+            # Initialize predictors
+            self._init_predictors()
             
-            # Run OCR
-            result = ocr.ocr(image_np, cls=True)
+            # Run recognition with detection predictor (Surya v0.17+ API)
+            # The recognition predictor will handle detection internally
+            print("[OCR] Running OCR (detection + recognition)...", flush=True)
+            rec_predictions = self._recognition(
+                [image], 
+                det_predictor=self._detection
+            )
             
-            # Extract text from result
-            if result and result[0]:
+            if rec_predictions and len(rec_predictions) > 0:
                 lines = []
-                for line in result[0]:
-                    if line[1]:  # Check if text exists
-                        text = line[1][0]  # Get the text
-                        confidence = line[1][1]  # Get confidence
-                        if confidence > 0.5:  # Filter low confidence
-                            lines.append(text)
+                pred = rec_predictions[0]
+                
+                print(f"[OCR] Surya found {len(pred.text_lines)} text lines", flush=True)
+                
+                for text_line in pred.text_lines:
+                    text = text_line.text
+                    confidence = text_line.confidence
+                    print(f"[OCR] Text: '{text}' (confidence: {confidence:.2f})", flush=True)
+                    if confidence > 0.3:
+                        lines.append(text)
                 
                 full_text = '\n'.join(lines)
                 result_data = self._parse_receipt_text(full_text, lines)
-                result_data['language'] = ocr_lang
+                result_data['language'] = lang or 'en'
+                
+                # Log the result
+                print(f"\n{'='*50}", flush=True)
+                print(f"[OCR] Parsed result:", flush=True)
+                print(json.dumps(result_data, indent=2, default=str), flush=True)
+                print(f"{'='*50}\n", flush=True)
+                
                 return result_data
             else:
-                # Try with the other language if no text detected
-                alt_lang = 'km' if ocr_lang == 'en' else 'en'
-                ocr_alt = self._get_ocr(alt_lang)
-                result = ocr_alt.ocr(image_np, cls=True)
-                
-                if result and result[0]:
-                    lines = []
-                    for line in result[0]:
-                        if line[1]:
-                            text = line[1][0]
-                            confidence = line[1][1]
-                            if confidence > 0.5:
-                                lines.append(text)
-                    
-                    full_text = '\n'.join(lines)
-                    result_data = self._parse_receipt_text(full_text, lines)
-                    result_data['language'] = alt_lang
-                    return result_data
-                
+                print(f"[OCR] No text detected in image", flush=True)
                 return {
                     'success': False,
                     'error': 'No text detected in image',
@@ -112,9 +106,197 @@ class PaddleOCR_Provider(OCRProvider):
                 }
                 
         except Exception as e:
+            import traceback
+            print(f"\n[OCR] Surya OCR failed: {str(e)}", flush=True)
+            print(traceback.format_exc(), flush=True)
             return {
                 'success': False,
-                'error': f'PaddleOCR failed: {str(e)}',
+                'error': f'Surya OCR failed: {str(e)}',
+                'raw_text': ''
+            }
+    
+    def _parse_receipt_text(self, text: str, lines: list) -> dict:
+        """Parse receipt text to extract structured data"""
+        
+        # Try to extract merchant name (usually first non-empty line)
+        merchant = ''
+        for line in lines[:3]:  # Check first 3 lines
+            line = line.strip()
+            if line and len(line) > 2 and not re.match(r'^[\d\s\-\/\.]+$', line):
+                merchant = line
+                break
+        
+        # Try to find total amount
+        total = None
+        total_patterns = [
+            r'total[:\s]*\$?([\d,]+\.?\d*)',
+            r'amount\s*due[:\s]*\$?([\d,]+\.?\d*)',
+            r'grand\s*total[:\s]*\$?([\d,]+\.?\d*)',
+            r'balance\s*due[:\s]*\$?([\d,]+\.?\d*)',
+            r'subtotal[:\s]*\$?([\d,]+\.?\d*)',
+        ]
+        
+        for pattern in total_patterns:
+            matches = re.findall(pattern, text, re.IGNORECASE)
+            if matches:
+                amounts = []
+                for m in matches:
+                    try:
+                        amounts.append(float(m.replace(',', '')))
+                    except ValueError:
+                        pass
+                if amounts:
+                    total = max(amounts)
+                    break
+        
+        # If no total found, look for largest dollar amount
+        if total is None:
+            all_amounts = re.findall(r'\$\s*([\d,]+\.?\d*)', text)
+            if all_amounts:
+                amounts = []
+                for m in all_amounts:
+                    try:
+                        amounts.append(float(m.replace(',', '')))
+                    except ValueError:
+                        pass
+                if amounts:
+                    total = max(amounts)
+        
+        # Try to find date
+        date = None
+        date_patterns = [
+            (r'(\d{1,2})[/-](\d{1,2})[/-](\d{4})', lambda m: f"{m.group(3)}-{m.group(1).zfill(2)}-{m.group(2).zfill(2)}"),
+            (r'(\d{1,2})[/-](\d{1,2})[/-](\d{2})', lambda m: f"20{m.group(3)}-{m.group(1).zfill(2)}-{m.group(2).zfill(2)}"),
+            (r'(\d{4})[/-](\d{1,2})[/-](\d{1,2})', lambda m: f"{m.group(1)}-{m.group(2).zfill(2)}-{m.group(3).zfill(2)}"),
+        ]
+        
+        for pattern, formatter in date_patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    date = formatter(match)
+                    break
+                except:
+                    pass
+        
+        # Extract line items (look for price patterns)
+        items = []
+        item_pattern = r'(.+?)\s+\$?([\d,]+\.\d{2})\s*$'
+        for line in lines:
+            match = re.match(item_pattern, line.strip())
+            if match:
+                item_name = match.group(1).strip()
+                item_price = float(match.group(2).replace(',', ''))
+                if item_name and item_price > 0 and item_price != total:
+                    items.append({'name': item_name, 'price': item_price})
+        
+        # Guess category based on keywords
+        category = self._guess_category(text)
+        
+        return {
+            'success': True,
+            'merchant': merchant,
+            'total': total,
+            'date': date,
+            'category': category,
+            'raw_text': text,
+            'items': items[:10]  # Limit to 10 items
+        }
+    
+    def _guess_category(self, text: str) -> str:
+        """Guess category based on text content"""
+        text_lower = text.lower()
+        
+        category_keywords = {
+            'Food & Dining': ['restaurant', 'cafe', 'coffee', 'food', 'pizza', 'burger', 'sushi', 'diner', 'kitchen', 'grill', 'bakery', 'starbucks', 'mcdonald', 'subway', 'chipotle', 'wendy', 'taco', 'kfc', 'popeyes', 'tea', 'milk'],
+            'Shopping': ['store', 'shop', 'mall', 'retail', 'amazon', 'walmart', 'target', 'costco', 'best buy', 'home depot', 'lowes', 'ikea', 'macy'],
+            'Transportation': ['gas', 'fuel', 'uber', 'lyft', 'taxi', 'parking', 'transit', 'metro', 'bus', 'shell', 'chevron', 'exxon', 'mobil', 'bp'],
+            'Healthcare': ['pharmacy', 'hospital', 'clinic', 'medical', 'doctor', 'health', 'cvs', 'walgreens', 'rite aid'],
+            'Entertainment': ['cinema', 'movie', 'theater', 'concert', 'ticket', 'game', 'netflix', 'spotify', 'amc', 'regal'],
+            'Bills & Utilities': ['electric', 'water', 'internet', 'phone', 'utility', 'bill', 'verizon', 'at&t', 'comcast'],
+            'Education': ['book', 'school', 'university', 'college', 'course', 'education', 'tuition', 'barnes'],
+        }
+        
+        for category, keywords in category_keywords.items():
+            for keyword in keywords:
+                if keyword in text_lower:
+                    return category
+        
+        return 'Other'
+
+
+class EasyOCR_Provider(OCRProvider):
+    """EasyOCR provider (local, free, high accuracy) - English and Khmer support"""
+    
+    _instance = None
+    _reader = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def _get_reader(self):
+        """Lazy load EasyOCR reader"""
+        if self._reader is None:
+            import easyocr
+            print("[OCR] Initializing EasyOCR with GPU...", flush=True)
+            # Support English (Khmer 'km' is not supported by EasyOCR)
+            # For Khmer text, consider using Tesseract with khm language pack
+            self._reader = easyocr.Reader(['en'], gpu=True)
+            print("[OCR] EasyOCR initialized successfully with GPU", flush=True)
+        return self._reader
+    
+    def extract_receipt_data(self, image_data: bytes, lang: str = None) -> dict:
+        print(f"\n[OCR] Starting receipt extraction with EasyOCR...", flush=True)
+        try:
+            # Open image and convert to numpy array
+            image = Image.open(io.BytesIO(image_data))
+            image_np = np.array(image)
+            
+            # Get OCR reader
+            reader = self._get_reader()
+            
+            # Run OCR - EasyOCR returns: [[bbox, text, confidence], ...]
+            result = reader.readtext(image_np)
+            
+            print(f"[OCR] EasyOCR found {len(result)} text regions", flush=True)
+            
+            if result:
+                lines = []
+                for detection in result:
+                    # EasyOCR format: [bbox, text, confidence]
+                    bbox, text, confidence = detection
+                    print(f"[OCR] Text: '{text}' (confidence: {confidence:.2f})", flush=True)
+                    if confidence > 0.3:  # Filter very low confidence
+                        lines.append(text)
+                
+                full_text = '\n'.join(lines)
+                result_data = self._parse_receipt_text(full_text, lines)
+                result_data['language'] = lang or 'multi'
+                
+                # Log the result
+                print(f"\n{'='*50}", flush=True)
+                print(f"[OCR] Parsed result:", flush=True)
+                print(json.dumps(result_data, indent=2, default=str), flush=True)
+                print(f"{'='*50}\n", flush=True)
+                
+                return result_data
+            else:
+                print(f"[OCR] No text detected in image", flush=True)
+                return {
+                    'success': False,
+                    'error': 'No text detected in image',
+                    'raw_text': ''
+                }
+                
+        except Exception as e:
+            import traceback
+            print(f"\n[OCR] EasyOCR failed: {str(e)}", flush=True)
+            print(traceback.format_exc(), flush=True)
+            return {
+                'success': False,
+                'error': f'EasyOCR failed: {str(e)}',
                 'raw_text': ''
             }
     
@@ -457,7 +639,7 @@ class OpenAIOCR(OCRProvider):
 
 def get_ocr_provider() -> OCRProvider:
     """Get the configured OCR provider"""
-    provider = getattr(settings, 'AI_PROVIDER', 'paddle').lower()
+    provider = getattr(settings, 'AI_PROVIDER', 'surya').lower()
     
     if provider == 'gemini':
         return GeminiOCR()
@@ -465,6 +647,8 @@ def get_ocr_provider() -> OCRProvider:
         return OpenAIOCR()
     elif provider == 'tesseract':
         return TesseractOCR()
+    elif provider == 'easyocr':
+        return EasyOCR_Provider()
     else:
-        # Default to PaddleOCR
-        return PaddleOCR_Provider()
+        # Default to Surya OCR (best for 6GB VRAM)
+        return SuryaOCR_Provider()

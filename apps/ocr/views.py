@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from django.conf import settings
 
-from .services import get_ocr_provider, PaddleOCR_Provider
+from .services import get_ocr_provider, SuryaOCR_Provider, EasyOCR_Provider
 
 
 @api_view(['POST'])
@@ -18,7 +18,7 @@ def scan_receipt(request):
     Request body:
     {
         "image": "base64 encoded image data",
-        "language": "en" or "km" (optional, default: en)
+        "language": "en" (optional, default: en)
     }
     
     Response:
@@ -61,14 +61,14 @@ def scan_receipt(request):
         # Get OCR provider and extract data
         provider = get_ocr_provider()
         
-        # Pass language to PaddleOCR provider
-        if isinstance(provider, PaddleOCR_Provider):
+        # Pass language to providers that support it
+        if isinstance(provider, (SuryaOCR_Provider, EasyOCR_Provider)):
             result = provider.extract_receipt_data(image_bytes, lang=language)
         else:
             result = provider.extract_receipt_data(image_bytes)
         
         # Add provider name to response
-        result['provider'] = getattr(settings, 'AI_PROVIDER', 'paddle').lower()
+        result['provider'] = getattr(settings, 'AI_PROVIDER', 'surya').lower()
         
         return Response(result)
         
@@ -82,16 +82,27 @@ def scan_receipt(request):
 @api_view(['GET'])
 def get_provider_info(request):
     """Get information about the current OCR provider"""
-    provider = getattr(settings, 'AI_PROVIDER', 'paddle').lower()
+    provider = getattr(settings, 'AI_PROVIDER', 'surya').lower()
     default_lang = getattr(settings, 'OCR_LANGUAGE', 'en')
     
     providers_info = {
-        'paddle': {
-            'name': 'PaddleOCR',
+        'surya': {
+            'name': 'Surya OCR',
             'type': 'local',
-            'description': 'High-accuracy local OCR engine with English and Khmer support',
+            'description': 'Modern, efficient OCR optimized for documents. Uses ~2-3GB VRAM.',
             'requires_api_key': False,
-            'supported_languages': ['en', 'km']
+            'supported_languages': ['en', 'multilingual'],
+            'gpu_enabled': True,
+            'vram_usage': '2-3GB'
+        },
+        'easyocr': {
+            'name': 'EasyOCR',
+            'type': 'local',
+            'description': 'High-accuracy local OCR engine with GPU support',
+            'requires_api_key': False,
+            'supported_languages': ['en'],
+            'gpu_enabled': True,
+            'vram_usage': '3-4GB'
         },
         'tesseract': {
             'name': 'Tesseract OCR',
@@ -119,6 +130,6 @@ def get_provider_info(request):
     return Response({
         'current_provider': provider,
         'default_language': default_lang,
-        'provider_info': providers_info.get(provider, providers_info['paddle']),
+        'provider_info': providers_info.get(provider, providers_info['surya']),
         'available_providers': list(providers_info.keys())
     })
