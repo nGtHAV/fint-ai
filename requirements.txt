@@ -1,0 +1,26 @@
+# Django and REST Framework
+django>=5.0.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.3.0
+
+# PaddleOCR - Primary OCR Engine
+paddlepaddle>=2.5.0
+paddleocr>=2.7.0
+
+# OCR and Image Processing (Fallback)
+pytesseract>=0.3.10
+Pillow>=10.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+
+# AI/ML for receipt parsing (Optional cloud providers)
+openai>=1.0.0
+google-generativeai>=0.3.0
+
+# Production server
+gunicorn>=21.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+django-environ>=0.11.2
+requests>=2.31.0

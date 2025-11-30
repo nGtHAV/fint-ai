@@ -1,0 +1,3 @@
+"""
+fint_ai package
+"""

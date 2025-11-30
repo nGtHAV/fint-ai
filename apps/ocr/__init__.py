@@ -1,0 +1,3 @@
+"""
+OCR app package
+"""
