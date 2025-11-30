@@ -58,7 +58,8 @@ apt install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    libgl1-mesa-glx
+    libgl1 \
+    libglx-mesa0
 
 # Step 3: Create application user
 echo -e "${YELLOW}[3/8] Setting up application user...${NC}"
