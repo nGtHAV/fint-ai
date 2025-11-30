@@ -1,0 +1,22 @@
+# Fint AI - Surya OCR Requirements
+# Best accuracy, optimized for GPU (~2-3GB VRAM)
+
+# Django and REST Framework
+django>=5.0.0
+djangorestframework>=3.14.0
+django-cors-headers>=4.3.0
+
+# Surya OCR (includes PyTorch dependencies)
+surya-ocr>=0.17.0
+
+# Image Processing
+Pillow>=10.0.0
+numpy>=1.24.0
+
+# Production server
+gunicorn>=21.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+django-environ>=0.11.2
+requests>=2.31.0

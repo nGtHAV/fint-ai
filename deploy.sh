@@ -84,32 +84,56 @@ fi
 
 # Step 5: Setup Python environment
 echo -e "${YELLOW}[5/8] Setting up Python environment...${NC}"
+
+# Prompt for OCR provider selection
+echo ""
+echo -e "${BLUE}Select OCR Provider:${NC}"
+echo "1) EasyOCR - Lightweight, good accuracy, works on CPU/GPU (default)"
+echo "2) Surya OCR - Best accuracy, optimized for GPU (~2-3GB VRAM)"
+echo ""
+read -p "Choice [1/2] (default: 1): " OCR_CHOICE
+OCR_CHOICE=${OCR_CHOICE:-1}
+
+case $OCR_CHOICE in
+    2)
+        OCR_PROVIDER="surya"
+        echo -e "${GREEN}Using Surya OCR (GPU optimized)${NC}"
+        ;;
+    *)
+        OCR_PROVIDER="easyocr"
+        echo -e "${GREEN}Using EasyOCR (CPU/GPU compatible)${NC}"
+        ;;
+esac
+
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+
+# Install dependencies based on selected provider
+echo -e "${YELLOW}Installing dependencies for ${OCR_PROVIDER}...${NC}"
+if [[ "$OCR_PROVIDER" == "easyocr" ]]; then
+    pip install --no-cache-dir -r requirements-easyocr.txt
+else
+    pip install --no-cache-dir -r requirements-surya.txt
+fi
 
 # Step 6: Configure environment
 echo -e "${YELLOW}[6/8] Configuring environment...${NC}"
-if [ ! -f ".env" ]; then
-    SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-    cat > .env << EOF
+SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+cat > .env << EOF
 SECRET_KEY=$SECRET_KEY
 DEBUG=False
-AI_PROVIDER=surya
+AI_PROVIDER=${OCR_PROVIDER}
 ALLOWED_HOSTS=localhost,127.0.0.1${DOMAIN:+,$DOMAIN}
 CORS_ALLOWED_ORIGINS=http://localhost:3000${DOMAIN:+,https://$DOMAIN}
 EOF
-    echo -e "${GREEN}Created .env file${NC}"
-else
-    echo -e "${YELLOW}.env file already exists, skipping...${NC}"
-fi
+echo -e "${GREEN}Created .env file with AI_PROVIDER=${OCR_PROVIDER}${NC}"
 
 # Step 7: Setup systemd service
 echo -e "${YELLOW}[7/8] Setting up systemd service...${NC}"
 cat > /etc/systemd/system/$APP_NAME.service << EOF
 [Unit]
-Description=Fint AI OCR Service (Surya OCR)
+Description=Fint AI OCR Service (${OCR_PROVIDER})
 After=network.target
 
 [Service]
@@ -122,7 +146,7 @@ ExecStart=$APP_DIR/venv/bin/gunicorn --config gunicorn.conf.py fint_ai.wsgi:appl
 Restart=always
 RestartSec=3
 
-# Surya OCR may need more memory
+# OCR may need more memory
 MemoryMax=4G
 CPUQuota=100%
 
