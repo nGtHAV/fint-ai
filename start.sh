@@ -27,5 +27,5 @@ else
     echo "🤖 Starting Fint AI OCR Service in DEVELOPMENT mode..."
     
     # Run development server on port 5001
-    python manage.py runserver 0.0.0.0:5001
+    python3 manage.py runserver 0.0.0.0:5001
 fi
